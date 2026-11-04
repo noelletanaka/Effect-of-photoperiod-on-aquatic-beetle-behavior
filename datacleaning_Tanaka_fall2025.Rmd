@@ -1,0 +1,767 @@
+---
+title: "Data Cleaning- Summer 2024 Research Project"
+author: "Noelle Tanaka"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+### Variable Types
+
+```{r, include=FALSE}
+
+library(tidyverse) 
+library(dplyr)
+library(ggplot2)
+library(forcats)
+```
+
+```{r}
+bigdata <- read.csv("tanaka_photoperiod_experiment_summer_2024 .csv", 
+                    strip.white = TRUE, 
+                    check.names = TRUE)
+```
+
+```{r}
+names(bigdata)
+
+researchdata <- data.frame(
+  id.number = bigdata$id.number,
+  beetle.number = bigdata$beetle.number,
+  replicate = bigdata$replicate,
+  day.of.experiment = bigdata$day.of.experiment,
+  photoperiod = bigdata$photoperiod,
+  light.status = bigdata$light.status,
+  dispersal = bigdata$dispersal,
+  burial = bigdata$burial,
+  perched.on.stick.in.water = bigdata$perched.on.stick.in.water,
+  perched.on.stick.out.of.water = bigdata$perched.on.stick.out.of.water
+)
+
+researchdata$photoperiod <- as.factor(researchdata$photoperiod)
+
+researchdata$light.status <- as.factor(researchdata$light.status)
+researchdata$light.status <- fct_recode(researchdata$light.status, 
+                                   "On" = "1", 
+                                   "Off" = "0")
+
+researchdata$dispersal <- as.factor(researchdata$dispersal)
+researchdata$dispersal <- fct_recode(researchdata$dispersal, 
+                                   "Yes" = "1", 
+                                   "No" = "0")
+
+researchdata$burial <- as.factor(researchdata$burial)
+researchdata$burial <- fct_recode(researchdata$burial, 
+                                   "Yes" = "1", 
+                                   "No" = "0")
+
+researchdata$perched.on.stick.in.water <- as.factor(researchdata$perched.on.stick.in.water)
+researchdata$perched.on.stick.in.water <- fct_recode(researchdata$perched.on.stick.in.water, 
+                                   "Yes" = "1", 
+                                   "No" = "0")
+
+researchdata$perched.on.stick.out.of.water <- as.factor(researchdata$perched.on.stick.out.of.water)
+researchdata$perched.on.stick.out.of.water <- fct_recode(researchdata$perched.on.stick.out.of.water, 
+                                   "Yes" = "1", 
+                                   "No" = "0")
+
+```
+```{r}
+str(researchdata)
+```
+
+###  Clean up Numeric Variables
+
+```{r}
+summary(researchdata)
+```
+
+### Visualize Variables-Dispersal per Photoperiod Treatment 
+```{r, warning=FALSE}
+# Dispersal Mosaic - Filtered for rows 1102 to 1201
+# Filter data for specified rows and remove NA values
+filtered_data <- researchdata[1101:1201, ] %>%
+  filter(!is.na(photoperiod) & !is.na(dispersal))
+
+# CHI-SQUARE TEST AND ASSUMPTIONS CHECKING
+
+# 1. Check data structure and create contingency table
+contingency_table <- table(filtered_data$photoperiod, filtered_data$dispersal)
+print("Contingency Table:")
+print(contingency_table)
+
+# 2. Check sample size assumption (n >= 30)
+total_n <- sum(contingency_table)
+cat("\nTotal sample size:", total_n)
+if(total_n >= 30) {
+  cat(" ✓ Sample size assumption met (n >= 30)\n")
+} else {
+  cat(" ✗ Sample size assumption NOT met (n < 30)\n")
+}
+
+# 3. Check independence assumption
+cat("\nIndependence Assumption:")
+cat("\n- Observations should be independent")
+cat("\n- Each subject should contribute to only one cell")
+cat("\n- Random sampling should be used")
+cat("\n✓ Assumed met based on experimental design\n")
+
+# 4. Check expected frequency assumption (all expected frequencies >= 5)
+expected_freq <- chisq.test(contingency_table)$expected
+print("\nExpected Frequencies:")
+print(round(expected_freq, 2))
+
+min_expected <- min(expected_freq)
+cat("\nMinimum expected frequency:", round(min_expected, 2))
+if(min_expected >= 5) {
+  cat(" ✓ Expected frequency assumption met (all cells >= 5)\n")
+} else {
+  cat(" ✗ Expected frequency assumption NOT met (some cells < 5)\n")
+  cat("Consider using Fisher's Exact Test instead\n")
+}
+
+# 5. Check for cells with expected frequency < 1
+cells_less_than_1 <- sum(expected_freq < 1)
+cat("Cells with expected frequency < 1:", cells_less_than_1)
+if(cells_less_than_1 == 0) {
+  cat(" ✓ No cells with expected frequency < 1\n")
+} else {
+  cat(" ✗ Some cells have expected frequency < 1\n")
+}
+
+# 6. Perform Chi-square test
+chi_test <- chisq.test(contingency_table)
+print("\nChi-square Test Results:")
+print(chi_test)
+
+# 7. Calculate effect size (Cramér's V)
+cramers_v <- sqrt(chi_test$statistic / (total_n * (min(dim(contingency_table)) - 1)))
+cat("\nCramér's V (effect size):", round(cramers_v, 3))
+if(cramers_v < 0.1) {
+  cat(" (negligible effect)")
+} else if(cramers_v < 0.3) {
+  cat(" (small effect)")
+} else if(cramers_v < 0.5) {
+  cat(" (medium effect)")
+} else {
+  cat(" (large effect)")
+}
+
+# 8. Alternative tests if assumptions are violated
+if(min_expected < 5 || cells_less_than_1 > 0) {
+  cat("\n\nAlternative Test (Fisher's Exact Test):")
+  if(nrow(contingency_table) == 2 && ncol(contingency_table) == 2) {
+    fisher_test <- fisher.test(contingency_table)
+    print(fisher_test)
+  } else {
+    cat("\nFisher's Exact Test not available for tables larger than 2x2")
+    cat("\nConsider Monte Carlo simulation or combining categories")
+  }
+}
+
+# 9. Summary of results
+cat("\nChi-square statistic:", round(chi_test$statistic, 3))
+cat("\np-value:", round(chi_test$p.value, 4))
+if(chi_test$p.value < 0.05) {
+  cat("\n✓ Significant association between photoperiod and dispersal (p < 0.05)")
+} else {
+  cat("\n✗ No significant association between photoperiod and dispersal (p >= 0.05)")
+}
+cat("\nEffect size (Cramér's V):", round(cramers_v, 3))
+
+# Create summary data for plotting
+mosaic_data <- filtered_data %>%
+  group_by(photoperiod, dispersal) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  group_by(photoperiod) %>%
+  mutate(prop = count / sum(count),
+         total = sum(count))
+
+ggplot(mosaic_data, aes(x = factor(photoperiod), y = prop, fill = factor(dispersal))) +
+  geom_col(position = "stack", color = "white", size = 0.5) +
+  labs(
+    title = "Dispersal Proportions by Photoperiod (Rows 1102-1201)",
+    x = "Photoperiod (Hours of Light per Day)",
+    y = "Proportion",
+    fill = "Dispersal"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, hjust = 0.5, margin = margin(b = 20)),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 11),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 11),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  scale_fill_manual(values = c("No" = "orchid", "Yes" = "#4ECDC4")) +
+  scale_y_continuous(labels = scales::percent_format())
+```
+```{r}
+# Load required libraries
+library(survival)
+library(survminer)
+
+# Create survival object using researchdata
+researchdata$dispersal_numeric <- ifelse(researchdata$dispersal == "Yes", 1, 0)
+
+# Adjust the Event column:
+# - 1 = dispersed
+# - 0 = censored (death or no event)
+researchdata$AdjustedEvent <- ifelse(researchdata$dispersal == "Yes", 1, 0)
+
+# Set 12-hour photoperiod as the reference level
+researchdata$photoperiod <- relevel(researchdata$photoperiod, ref = "12")
+
+# Check the structure again
+table(researchdata$AdjustedEvent, researchdata$photoperiod)
+
+# Create the survival object
+surv_obj <- Surv(time = researchdata$day.of.experiment, event = researchdata$AdjustedEvent)
+
+#Check for assumptions !!!!!
+res.cox1 <- coxph(surv_obj ~ photoperiod, data = researchdata)
+res.cox1
+res.zph1 <- cox.zph(res.cox1)
+
+# Fit Cox Proportional Hazards Model
+cox_model <- coxph(surv_obj ~ photoperiod, data = researchdata)
+
+# View summary of the model
+cox_model
+
+# Create survival object
+surv_obj <- Surv(time = researchdata$day.of.experiment, 
+                 event = researchdata$dispersal_numeric)
+
+# Fit survival curves by photoperiod
+surv_fit <- survfit(surv_obj ~ photoperiod, data = researchdata)
+
+# Create the plot
+ggsurvplot(
+  surv_fit,
+  data = researchdata,
+  conf.int = TRUE,            # Add confidence intervals
+  xlab = "Days",              # X-axis label
+  ylab = "Proportion Not Dispersed",  # Y-axis label
+  palette = "jco",            # Use a predefined color palette
+  font.x = 14,                # Increase X-axis font size
+  font.y = 14,                # Increase Y-axis font size
+  font.tickslab = 12,         # Increase tick label font size
+  legend.title = "Photoperiod (Hours)",  # Add legend title
+  ggtheme = theme_minimal(base_size = 8)  # Apply theme directly
+)
+```
+```{r}
+#Check for assumptions !!!!!
+res.cox1 <- coxph(surv_obj ~ photoperiod, data = researchdata)
+res.cox1
+res.zph1 <- cox.zph(res.cox1)
+res.zph1
+```
+
+
+
+### Visualize Variables-Burial per Photoperiod Treatment- day 3 
+```{r, warning=FALSE}
+
+# Filter data to only include Day 3
+day3_data <- researchdata %>%
+  filter(day.of.experiment == 3)
+
+# Create summary data for mosaic plot
+mosaic_data <- day3_data %>%
+  group_by(photoperiod, burial) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  group_by(photoperiod) %>%
+  mutate(prop = count / sum(count),
+         total = sum(count))
+
+# Plot
+ggplot(mosaic_data, aes(x = factor(photoperiod), y = prop, fill = factor(burial))) +
+  geom_col(position = "stack", color = "white", size = 0.5) +
+  labs(
+    title = "Burial Proportions by Photoperiod on Day 3",
+    x = "Photoperiod (Hours of Light per Day)",
+    y = "Proportion",
+    fill = "Burial"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, hjust = 0.5, margin = margin(b = 20)),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 11),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 11),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  scale_fill_manual(values = c("No" = "orchid", "Yes" = "#4ECDC4")) +
+  scale_y_continuous(labels = scales::percent_format())
+
+# CHI-SQUARE TEST AND ASSUMPTIONS CHECKING FOR BURIAL ON DAY 3
+
+# 1. Check data structure and create contingency table
+contingency_table <- table(day3_data$photoperiod, day3_data$burial)
+print("Contingency Table:")
+print(contingency_table)
+
+# 2. Check sample size assumption (n >= 30)
+total_n <- sum(contingency_table)
+cat("\nTotal sample size:", total_n)
+if(total_n >= 30) {
+  cat(" ✓ Sample size assumption met (n >= 30)\n")
+} else {
+  cat(" ✗ Sample size assumption NOT met (n < 30)\n")
+}
+
+# 3. Check independence assumption
+cat("\nIndependence Assumption:")
+cat("\n- Observations should be independent")
+cat("\n- Each subject should contribute to only one cell")
+cat("\n- Random sampling should be used")
+cat("\n✓ Assumed met based on experimental design\n")
+
+# 4. Check expected frequency assumption (all expected frequencies >= 5)
+expected_freq <- chisq.test(contingency_table)$expected
+print("\nExpected Frequencies:")
+print(round(expected_freq, 2))
+
+min_expected <- min(expected_freq)
+cat("\nMinimum expected frequency:", round(min_expected, 2))
+if(min_expected >= 5) {
+  cat(" ✓ Expected frequency assumption met (all cells >= 5)\n")
+} else {
+  cat(" ✗ Expected frequency assumption NOT met (some cells < 5)\n")
+  cat("Consider using Fisher's Exact Test instead\n")
+}
+
+# 5. Check for cells with expected frequency < 1
+cells_less_than_1 <- sum(expected_freq < 1)
+cat("Cells with expected frequency < 1:", cells_less_than_1)
+if(cells_less_than_1 == 0) {
+  cat(" ✓ No cells with expected frequency < 1\n")
+} else {
+  cat(" ✗ Some cells have expected frequency < 1\n")
+}
+
+# 6. Perform Chi-square test
+chi_test <- chisq.test(contingency_table)
+print("\nChi-square Test Results:")
+print(chi_test)
+
+# 7. Calculate effect size (Cramér's V)
+cramers_v <- sqrt(chi_test$statistic / (total_n * (min(dim(contingency_table)) - 1)))
+cat("\nCramér's V (effect size):", round(cramers_v, 3))
+if(cramers_v < 0.1) {
+  cat(" (negligible effect)")
+} else if(cramers_v < 0.3) {
+  cat(" (small effect)")
+} else if(cramers_v < 0.5) {
+  cat(" (medium effect)")
+} else {
+  cat(" (large effect)")
+}
+
+# 8. Alternative tests if assumptions are violated
+if(min_expected < 5 || cells_less_than_1 > 0) {
+  cat("\n\nAlternative Test (Fisher's Exact Test):")
+  if(nrow(contingency_table) == 2 && ncol(contingency_table) == 2) {
+    fisher_test <- fisher.test(contingency_table)
+    print(fisher_test)
+  } else {
+    cat("\nFisher's Exact Test not available for tables larger than 2x2")
+    cat("\nConsider Monte Carlo simulation or combining categories")
+  }
+}
+
+# 9. Summary of results
+cat("\nChi-square statistic:", round(chi_test$statistic, 3))
+cat("\np-value:", round(chi_test$p.value, 4))
+if(chi_test$p.value < 0.05) {
+  cat("\n✓ Significant association between photoperiod and burial (p < 0.05)")
+} else {
+  cat("\n✗ No significant association between photoperiod and burial (p >= 0.05)")
+}
+cat("\nEffect size (Cramér's V):", round(cramers_v, 3))
+
+```
+
+### Visualize Variables- Amount Perched on the Stick in Water per Photoperiod Treatment- day 3  
+```{r, warning=FALSE}
+
+# Perched on the stick in water Mosiac
+# Filter data to only include Day 3
+day3_data <- researchdata %>%
+  filter(day.of.experiment == 3)
+
+# Create summary data for mosaic plot
+mosaic_data <- day3_data %>%
+  group_by(photoperiod, perched.on.stick.in.water) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  group_by(photoperiod) %>%
+  mutate(prop = count / sum(count),
+         total = sum(count))
+
+ggplot(mosaic_data, aes(x = factor(photoperiod), y = prop, fill = factor(perched.on.stick.in.water))) +
+  geom_col(position = "stack", color = "white", size = 0.5) +
+  labs(
+    title = "Perched on the Stick in Water Proportions by Photoperiod on Day 3",
+    x = "Photoperiod (Hours of Light per Day)",
+    y = "Proportion",
+    fill = "Perched on the Stick in Water"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, hjust = 0.5, margin = margin(b = 20)),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 11),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 11),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  scale_fill_manual(values = c("No" = "orchid", "Yes" = "#4ECDC4")) +
+  scale_y_continuous(labels = scales::percent_format())
+
+# CHI-SQUARE TEST AND ASSUMPTIONS CHECKING FOR BURIAL ON DAY 3
+
+# 1. Check data structure and create contingency table
+contingency_table <- table(day3_data$photoperiod, day3_data$perched.on.stick.in.water)
+print("Contingency Table:")
+print(contingency_table)
+
+# 2. Check sample size assumption (n >= 30)
+total_n <- sum(contingency_table)
+cat("\nTotal sample size:", total_n)
+if(total_n >= 30) {
+  cat(" ✓ Sample size assumption met (n >= 30)\n")
+} else {
+  cat(" ✗ Sample size assumption NOT met (n < 30)\n")
+}
+
+# 3. Check independence assumption
+cat("\nIndependence Assumption:")
+cat("\n- Observations should be independent")
+cat("\n- Each subject should contribute to only one cell")
+cat("\n- Random sampling should be used")
+cat("\n✓ Assumed met based on experimental design\n")
+
+# 4. Check expected frequency assumption (all expected frequencies >= 5)
+expected_freq <- chisq.test(contingency_table)$expected
+print("\nExpected Frequencies:")
+print(round(expected_freq, 2))
+
+min_expected <- min(expected_freq)
+cat("\nMinimum expected frequency:", round(min_expected, 2))
+if(min_expected >= 5) {
+  cat(" ✓ Expected frequency assumption met (all cells >= 5)\n")
+} else {
+  cat(" ✗ Expected frequency assumption NOT met (some cells < 5)\n")
+  cat("Consider using Fisher's Exact Test instead\n")
+}
+
+# 5. Check for cells with expected frequency < 1
+cells_less_than_1 <- sum(expected_freq < 1)
+cat("Cells with expected frequency < 1:", cells_less_than_1)
+if(cells_less_than_1 == 0) {
+  cat(" ✓ No cells with expected frequency < 1\n")
+} else {
+  cat(" ✗ Some cells have expected frequency < 1\n")
+}
+
+# 6. Perform Chi-square test
+chi_test <- chisq.test(contingency_table)
+print("\nChi-square Test Results:")
+print(chi_test)
+
+# 7. Calculate effect size (Cramér's V)
+cramers_v <- sqrt(chi_test$statistic / (total_n * (min(dim(contingency_table)) - 1)))
+cat("\nCramér's V (effect size):", round(cramers_v, 3))
+if(cramers_v < 0.1) {
+  cat(" (negligible effect)")
+} else if(cramers_v < 0.3) {
+  cat(" (small effect)")
+} else if(cramers_v < 0.5) {
+  cat(" (medium effect)")
+} else {
+  cat(" (large effect)")
+}
+
+# 8. Alternative tests if assumptions are violated
+if(min_expected < 5 || cells_less_than_1 > 0) {
+  cat("\n\nAlternative Test (Fisher's Exact Test):")
+  if(nrow(contingency_table) == 2 && ncol(contingency_table) == 2) {
+    fisher_test <- fisher.test(contingency_table)
+    print(fisher_test)
+  } else {
+    cat("\nFisher's Exact Test not available for tables larger than 2x2")
+    cat("\nConsider Monte Carlo simulation or combining categories")
+  }
+}
+
+# 9. Summary of results
+cat("\nChi-square statistic:", round(chi_test$statistic, 3))
+cat("\np-value:", round(chi_test$p.value, 4))
+if(chi_test$p.value < 0.05) {
+  cat("\n✓ Significant association between photoperiod and perched on stick in water (p < 0.05)")
+} else {
+  cat("\n✗ No significant association between photoperiod and perched on stick in water (p >= 0.05)")
+}
+cat("\nEffect size (Cramér's V):", round(cramers_v, 3))
+
+
+```
+
+### Visualize Variables- Amount Perched on the Stick out of Water per Photoperiod Treatment- day 3  
+```{r, warning=FALSE}
+
+# Perched on the Stick out of Water Mosiac
+# Filter data to only include Day 3
+day3_data <- researchdata %>%
+  filter(day.of.experiment == 3)
+
+# Create summary data for mosaic plot
+mosaic_data <- day3_data %>%
+  group_by(photoperiod, perched.on.stick.out.of.water) %>%
+  summarise(count = n(), .groups = 'drop') %>%
+  group_by(photoperiod) %>%
+  mutate(prop = count / sum(count),
+         total = sum(count))
+
+ggplot(mosaic_data, aes(x = factor(photoperiod), y = prop, fill = factor(perched.on.stick.out.of.water))) +
+  geom_col(position = "stack", color = "white", size = 0.5) +
+  labs(
+    title = "Perched on the Stick out of Water Proportions by Photoperiod on Day 3",
+    x = "Photoperiod (Hours of Light per Day)",
+    y = "Proportion",
+    fill = "Perched on the Stick out of Water"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, hjust = 0.5, margin = margin(b = 20)),
+    axis.title = element_text(size = 12),
+    axis.text = element_text(size = 11),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 11),
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA)
+  ) +
+  scale_fill_manual(values = c("No" = "orchid", "Yes" = "#4ECDC4")) +
+  scale_y_continuous(labels = scales::percent_format())
+
+# CHI-SQUARE TEST AND ASSUMPTIONS CHECKING FOR BURIAL ON DAY 3
+
+# 1. Check data structure and create contingency table
+contingency_table <- table(day3_data$photoperiod, day3_data$perched.on.stick.out.of.water)
+print("Contingency Table:")
+print(contingency_table)
+
+# 2. Check sample size assumption (n >= 30)
+total_n <- sum(contingency_table)
+cat("\nTotal sample size:", total_n)
+if(total_n >= 30) {
+  cat(" ✓ Sample size assumption met (n >= 30)\n")
+} else {
+  cat(" ✗ Sample size assumption NOT met (n < 30)\n")
+}
+
+# 3. Check independence assumption
+cat("\nIndependence Assumption:")
+cat("\n- Observations should be independent")
+cat("\n- Each subject should contribute to only one cell")
+cat("\n- Random sampling should be used")
+cat("\n✓ Assumed met based on experimental design\n")
+
+# 4. Check expected frequency assumption (all expected frequencies >= 5)
+expected_freq <- chisq.test(contingency_table)$expected
+print("\nExpected Frequencies:")
+print(round(expected_freq, 2))
+
+min_expected <- min(expected_freq)
+cat("\nMinimum expected frequency:", round(min_expected, 2))
+if(min_expected >= 5) {
+  cat(" ✓ Expected frequency assumption met (all cells >= 5)\n")
+} else {
+  cat(" ✗ Expected frequency assumption NOT met (some cells < 5)\n")
+  cat("Consider using Fisher's Exact Test instead\n")
+}
+
+# 5. Check for cells with expected frequency < 1
+cells_less_than_1 <- sum(expected_freq < 1)
+cat("Cells with expected frequency < 1:", cells_less_than_1)
+if(cells_less_than_1 == 0) {
+  cat(" ✓ No cells with expected frequency < 1\n")
+} else {
+  cat(" ✗ Some cells have expected frequency < 1\n")
+}
+
+# 6. Perform Chi-square test
+chi_test <- chisq.test(contingency_table)
+print("\nChi-square Test Results:")
+print(chi_test)
+
+# 7. Calculate effect size (Cramér's V)
+cramers_v <- sqrt(chi_test$statistic / (total_n * (min(dim(contingency_table)) - 1)))
+cat("\nCramér's V (effect size):", round(cramers_v, 3))
+if(cramers_v < 0.1) {
+  cat(" (negligible effect)")
+} else if(cramers_v < 0.3) {
+  cat(" (small effect)")
+} else if(cramers_v < 0.5) {
+  cat(" (medium effect)")
+} else {
+  cat(" (large effect)")
+}
+
+# 8. Alternative tests if assumptions are violated
+if(min_expected < 5 || cells_less_than_1 > 0) {
+  cat("\n\nAlternative Test (Fisher's Exact Test):")
+  if(nrow(contingency_table) == 2 && ncol(contingency_table) == 2) {
+    fisher_test <- fisher.test(contingency_table)
+    print(fisher_test)
+  } else {
+    cat("\nFisher's Exact Test not available for tables larger than 2x2")
+    cat("\nConsider Monte Carlo simulation or combining categories")
+  }
+}
+
+# 9. Summary of results
+cat("\nChi-square statistic:", round(chi_test$statistic, 3))
+cat("\np-value:", round(chi_test$p.value, 4))
+if(chi_test$p.value < 0.05) {
+  cat("\n✓ Significant association between photoperiod and perched on stick out of water (p < 0.05)")
+} else {
+  cat("\n✗ No significant association between photoperiod and perched on stick out of water (p >= 0.05)")
+}
+cat("\nEffect size (Cramér's V):", round(cramers_v, 3))
+
+
+```
+```{r}
+environmentdata <- read.csv("Noelle_Tanaka_Photoperiod_evnironmental_var Summer 2024 - Photoperiod environmental variables.csv", 
+                    strip.white = TRUE, 
+                    check.names = TRUE)
+```
+
+```{r}
+environmentdata$Photoperiod <- as.factor(environmentdata$Photoperiod)
+
+# Create the plot without Time.of.day
+ggplot(environmentdata, aes(x = Day, 
+                            y = temperature, 
+                            group = Photoperiod, 
+                            color = factor(Photoperiod))) +
+  geom_line(size = 1.2) +
+  labs(title = "Temperature Across Days by Photoperiod",
+       x = "Day",
+       y = "Temperature (°C)",
+       color = "Photoperiod") +
+  theme_minimal()
+
+environmentdata$Photoperiod <- as.factor(environmentdata$Photoperiod)
+environmentdata$Day <- as.factor(environmentdata$Day)  # or leave numeric if continuous
+
+# One-way ANOVA for Temperature by Photoperiod
+# Make sure your data is loaded first
+
+# Run one-way ANOVA
+anova_result <- aov(temperature ~ Photoperiod, data = environmentdata)
+
+# Display ANOVA table with p-values
+summary(anova_result)
+
+# Alternative: You can also use oneway.test() for a one-way ANOVA
+oneway.test(temperature ~ Photoperiod, data = environmentdata)
+
+# For more detailed output, you can also use:
+anova(anova_result)
+
+# To check assumptions:
+# 1. Check normality of residuals
+shapiro.test(residuals(anova_result))
+
+# 2. Check homogeneity of variances
+bartlett.test(temperature ~ Photoperiod, data = environmentdata)
+
+# Repeated Measures ANOVA using base R
+# Replace "Subject" with the column identifying each participant or replicate
+
+anova_rm <- aov(temperature ~ Photoperiod, data = environmentdata)
+
+# View results
+summary(anova_rm)
+
+```
+
+```{r}
+# Create the plot without Time.of.day
+ggplot(environmentdata, aes(x = Day, 
+                            y = humidity, 
+                            group = Photoperiod, 
+                            color = factor(Photoperiod))) +
+  geom_line(size = 1.2) +
+  labs(title = "Humidity Across Days by Photoperiod",
+       x = "Day",
+       y = "Humidity",
+       color = "Photoperiod") +
+  theme_minimal()
+
+environmentdata$Photoperiod <- as.factor(environmentdata$Photoperiod)
+environmentdata$Day <- as.factor(environmentdata$Day)  # or leave numeric if continuous
+
+# One-way ANOVA for Humidity by Photoperiod
+# Make sure your data is loaded first
+
+# Run one-way ANOVA
+anova_result <- aov(humidity ~ Photoperiod, data = environmentdata)
+
+# Display ANOVA table with p-values
+summary(anova_result)
+
+# Alternative: You can also use oneway.test() for a one-way ANOVA
+oneway.test(humidity ~ Photoperiod, data = environmentdata)
+
+# For more detailed output, you can also use:
+anova(anova_result)
+
+# To check assumptions:
+# 1. Check normality of residuals
+shapiro.test(residuals(anova_result))
+
+# 2. Check homogeneity of variances
+bartlett.test(humidity ~ Photoperiod, data = environmentdata)
+
+# Repeated Measures ANOVA using base R
+# Replace "Subject" with the column identifying each participant or replicate
+
+anova_rm <- aov(temperature ~ Photoperiod, data = environmentdata)
+
+# View results
+summary(anova_rm)
+
+# Repeated Measures ANOVA using base R
+# Replace "Subject" with the column identifying each participant or replicate
+
+anova_rm <- aov(humidity ~ Photoperiod, data = environmentdata)
+
+# View results
+summary(anova_rm)
+
+```
+
+
+```{r}
+save(researchdata, file = "Summer_2025_Research_Tanaka.RData")
+```
